@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projecto Aurora (Nome Provisório)
 // @namespace    https://github.com/rm0ntoya/Wplace
-// @version      0.1.1-debug
+// @version      0.1.2-debug
 // @description  Melhora a experiência no wplace.live com um overlay de templates e um novo design.
 // @author       Ruan Pablo
 // @match        *://*.wplace.live/*
@@ -472,9 +472,14 @@
                 if (imageData.data[i] > 0) opaquePixelCount++;
             }
             this.pixelCount = opaquePixelCount;
-            const chunkCtxs = {};
+
+            const chunkCanvases = {};
+
             for (let y = 0; y < imageHeight; y++) {
                 for (let x = 0; x < imageWidth; x++) {
+                    const pixelAlpha = imageData.data[(y * imageWidth + x) * 4 + 3];
+                    if (pixelAlpha === 0) continue;
+
                     const globalPixelX = this.coords[2] + x;
                     const globalPixelY = this.coords[3] + y;
                     const tileX = this.coords[0] + Math.floor(globalPixelX / this.tileSize);
@@ -482,20 +487,26 @@
                     const localPixelX = globalPixelX % this.tileSize;
                     const localPixelY = globalPixelY % this.tileSize;
                     const tileKey = `${tileX},${tileY}`;
-                    if (!chunkCtxs[tileKey]) {
+
+                    if (!chunkCanvases[tileKey]) {
                         const newChunkCanvas = new OffscreenCanvas(this.tileSize * this.pixelGridSize, this.tileSize * this.pixelGridSize);
-                        chunkCtxs[tileKey] = newChunkCanvas.getContext('2d', { willReadFrequently: true });
-                        chunkCtxs[tileKey].imageSmoothingEnabled = false;
+                        const newChunkCtx = newChunkCanvas.getContext('2d', { willReadFrequently: true });
+                        newChunkCtx.imageSmoothingEnabled = false;
+                        chunkCanvases[tileKey] = { canvas: newChunkCanvas, context: newChunkCtx };
                     }
+
                     const pixelData = analysisCtx.getImageData(x, y, 1, 1);
-                    if (pixelData.data[3] > 0) {
-                        chunkCtxs[tileKey].putImageData(pixelData, localPixelX * this.pixelGridSize + Math.floor(this.pixelGridSize / 2), localPixelY * this.pixelGridSize + Math.floor(this.pixelGridSize / 2));
-                    }
+                    chunkCanvases[tileKey].context.putImageData(pixelData, localPixelX * this.pixelGridSize + Math.floor(this.pixelGridSize / 2), localPixelY * this.pixelGridSize + Math.floor(this.pixelGridSize / 2));
                 }
             }
-            for (const key in chunkCtxs) {
-                const canvas = chunkCtxs[key].canvas;
-                this.chunks[key] = await canvas.transferToImageBitmap();
+
+            for (const key in chunkCanvases) {
+                const { canvas } = chunkCanvases[key];
+                this.chunks[key] = {
+                    bitmap: await canvas.transferToImageBitmap(),
+                    x: 0, // Os chunks agora são desenhados na posição 0,0 do tile combinado
+                    y: 0
+                };
                 const blob = await canvas.convertToBlob({ type: 'image/png' });
                 const buffer = await blob.arrayBuffer();
                 this.chunksBase64[key] = uint8ToBase64(new Uint8Array(buffer));
@@ -541,14 +552,16 @@
             const tileKey = `${tileCoords[0]},${tileCoords[1]}`;
             const chunksToDraw = this.templates.map(template => template.chunks[tileKey]).filter(chunk => chunk);
             if (chunksToDraw.length === 0) return tileBlob;
+
             const originalTileBitmap = await createImageBitmap(tileBlob);
             const { width, height } = originalTileBitmap;
             const canvas = new OffscreenCanvas(width, height);
             const ctx = canvas.getContext('2d');
             ctx.imageSmoothingEnabled = false;
             ctx.drawImage(originalTileBitmap, 0, 0);
-            for (const chunkBitmap of chunksToDraw) {
-                ctx.drawImage(chunkBitmap, 0, 0);
+
+            for (const chunk of chunksToDraw) {
+                ctx.drawImage(chunk.bitmap, chunk.x, chunk.y);
             }
             return await canvas.convertToBlob({ type: 'image/png' });
         }
@@ -572,7 +585,8 @@
                     const base64 = saved.chunksBase64[key];
                     const uint8 = base64ToUint8(base64);
                     const blob = new Blob([uint8], { type: 'image/png' });
-                    template.chunks[key] = await createImageBitmap(blob);
+                    const bitmap = await createImageBitmap(blob);
+                    template.chunks[key] = { bitmap: bitmap, x: 0, y: 0 };
                 }
                 this.templates.push(template);
             }
@@ -677,7 +691,6 @@
     const coordInputs = Components.createCoordinateInputs();
     const fileUploader = Components.createFileInput('ns-template-file', 'Carregar Template');
     const createButton = Components.createButton('ns-btn-create', 'Criar Template');
-    const toggleButton = Components.createButton('ns-btn-toggle', 'Desativar Templates', ['ns-button-secondary']);
     const statusArea = document.createElement('div');
     statusArea.id = ui.outputStatusId;
     statusArea.textContent = `Status: Inativo. v${SCRIPT_VERSION}`;
@@ -689,7 +702,6 @@
         .add(null, {}, (el) => el.append(coordInputs))
         .add(null, {}, (el) => el.append(fileUploader.container))
         .add(null, {}, (el) => el.append(createButton))
-        .add(null, {}, (el) => el.append(toggleButton))
         .add(null, {}, (el) => el.append(statusArea))
     .end();
     
@@ -725,11 +737,6 @@
         } else {
             ui.handleDisplayError("Por favor, selecione um ficheiro de imagem.");
         }
-    });
-
-    toggleButton.addEventListener('click', () => {
-        templateManager.toggleTemplates(!templateManager.areTemplatesEnabled);
-        toggleButton.textContent = templateManager.areTemplatesEnabled ? 'Desativar Templates' : 'Ativar Templates';
     });
 
     await templateManager.loadTemplates();

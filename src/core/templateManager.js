@@ -35,7 +35,7 @@ export default class TemplateManager {
   toggleTemplates(isEnabled) {
     this.areTemplatesEnabled = isEnabled;
     this.overlay.handleDisplayStatus(`Templates ${isEnabled ? 'ativados' : 'desativados'}.`);
-    // Aqui, seria necessário acionar uma nova renderização da tela, se aplicável.
+    // Numa implementação mais avançada, isto poderia forçar uma nova renderização do canvas.
   }
 
   /**
@@ -101,8 +101,8 @@ export default class TemplateManager {
     ctx.drawImage(originalTileBitmap, 0, 0);
 
     // 2. Desenha cada pedaço de template por cima
-    for (const chunkBitmap of chunksToDraw) {
-      ctx.drawImage(chunkBitmap, 0, 0);
+    for (const chunk of chunksToDraw) {
+        ctx.drawImage(chunk.bitmap, chunk.x, chunk.y);
     }
 
     return await canvas.convertToBlob({ type: 'image/png' });
@@ -146,7 +146,8 @@ export default class TemplateManager {
         const base64 = saved.chunksBase64[key];
         const uint8 = base64ToUint8(base64);
         const blob = new Blob([uint8], { type: 'image/png' });
-        template.chunks[key] = await createImageBitmap(blob);
+        const bitmap = await createImageBitmap(blob);
+        template.chunks[key] = { bitmap: bitmap, x: 0, y: 0 };
       }
       
       this.templates.push(template);

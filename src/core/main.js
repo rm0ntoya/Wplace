@@ -134,3 +134,4 @@ import { spyOnFetch } from '../utils/network.js';
     console.log(`[${SCRIPT_NAME}] Carregado e a funcionar!`);
 
 })();
+
