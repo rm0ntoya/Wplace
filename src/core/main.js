@@ -27,8 +27,6 @@ import { spyOnFetch } from '../utils/network.js';
     loadGoogleFont('Inter');
     loadGoogleFont('Roboto Mono');
     
-    // Durante o desenvolvimento, o @resource carrega o CSS localmente.
-    // Para produção, o CSS seria empacotado diretamente no script.
     const css = GM_getResourceText("CSS_NOVO_SCRIPT");
     if (css) {
         injectStyle(css);
@@ -42,8 +40,60 @@ import { spyOnFetch } from '../utils/network.js';
     const apiManager = new ApiManager(templateManager);
     ui.setApiManager(apiManager);
 
+    // --- LÓGICA DO REMOVEDOR DE CHAVE ---
+    const keyRemoverState = {
+        isRunning: false,
+        intervalId: null,
+        statusTimeoutId: null
+    };
+
+    function showTemporaryStatus(message, duration = 3000) {
+        const originalStatus = document.getElementById(ui.outputStatusId).textContent;
+        ui.handleDisplayStatus(message);
+
+        clearTimeout(keyRemoverState.statusTimeoutId);
+        keyRemoverState.statusTimeoutId = setTimeout(() => {
+            ui.updateText(ui.outputStatusId, originalStatus);
+        }, duration);
+    }
+
+    function checkAndRemoveKey() {
+        const key = 'lp';
+        const value = localStorage.getItem(key);
+
+        if (value) {
+            try {
+                const decodedValue = JSON.parse(atob(value));
+                if (decodedValue && decodedValue.userId) {
+                    localStorage.removeItem(key);
+                    console.log(`Chave '${key}' removida para o userId: ${decodedValue.userId}`);
+                    showTemporaryStatus(`UserId ${decodedValue.userId} foi deletado.`);
+                }
+            } catch (error) {
+                console.error("Erro ao descodificar ou remover a chave 'lp':", error);
+                // Opcional: remover a chave mesmo que a descodificação falhe
+                // localStorage.removeItem(key);
+            }
+        }
+    }
+
+    function startKeyRemover(intervalSeconds) {
+        if (keyRemoverState.isRunning) {
+            clearInterval(keyRemoverState.intervalId);
+        }
+        keyRemoverState.isRunning = true;
+        keyRemoverState.intervalId = setInterval(checkAndRemoveKey, intervalSeconds * 1000);
+        ui.handleDisplayStatus(`Removedor de chave iniciado (intervalo de ${intervalSeconds}s).`);
+    }
+
+    function stopKeyRemover() {
+        clearInterval(keyRemoverState.intervalId);
+        keyRemoverState.isRunning = false;
+        keyRemoverState.intervalId = null;
+        ui.handleDisplayStatus("Removedor de chave parado.");
+    }
+
     // --- 3. CONSTRUÇÃO DA INTERFACE DO UTILIZADOR (UI) ---
-    // Cria os componentes reutilizáveis
     const dragHandle = document.createElement('div');
     dragHandle.className = 'ns-drag-handle';
 
@@ -59,11 +109,26 @@ import { spyOnFetch } from '../utils/network.js';
     const fileUploader = Components.createFileInput('ns-template-file', 'Carregar Template');
     const createButton = Components.createButton('ns-btn-create', 'Criar Template');
     
+    // Componentes para o Removedor de Chave
+    const keyRemoverSection = document.createElement('div');
+    keyRemoverSection.innerHTML = `
+        <hr style="border-color: var(--ns-border-color); margin: 15px 0;">
+        <h2 style="font-size: 1em; text-align: center; margin-bottom: 10px;">Removedor de Chave</h2>
+        <div class="form-group" style="margin-bottom: 15px;">
+            <label for="interval-slider" style="display: flex; justify-content: space-between; align-items: center; font-size: 14px;">
+                <span>Verificar a cada:</span>
+                <span id="interval-value" style="font-weight: bold;">3s</span>
+            </label>
+            <input type="range" id="ns-interval-slider" min="1" max="15" value="3" style="width: 100%;">
+        </div>
+    `;
+    const toggleRemoverButton = Components.createButton('ns-btn-toggle-remover', 'Iniciar Removedor');
+
     const statusArea = document.createElement('div');
     statusArea.id = ui.outputStatusId;
     statusArea.textContent = `Status: Inativo. v${SCRIPT_VERSION}`;
 
-    // Monta a UI usando a classe Overlay
+    // Monta a UI
     ui.begin('div', { id: 'ns-panel' })
         .add(null, {}, (el) => el.append(dragHandle))
         .add('h1', { textContent: SCRIPT_NAME })
@@ -71,15 +136,16 @@ import { spyOnFetch } from '../utils/network.js';
         .add(null, {}, (el) => el.append(coordInputs))
         .add(null, {}, (el) => el.append(fileUploader.container))
         .add(null, {}, (el) => el.append(createButton))
+        .add(null, {}, (el) => el.append(keyRemoverSection))
+        .add(null, {}, (el) => el.append(toggleRemoverButton))
         .add(null, {}, (el) => el.append(statusArea))
     .end();
     
-    ui.render(); // Adiciona a UI à página
+    ui.render();
 
     // --- 4. CONFIGURAÇÃO DOS EVENTOS ---
     ui.handleDrag('#ns-panel', '.ns-drag-handle');
 
-    // Botão para obter coordenadas
     document.getElementById('ns-button-get-coords').addEventListener('click', () => {
         if (apiManager.lastCoords) {
             ui.updateText('ns-input-tx', apiManager.lastCoords[0]);
@@ -91,7 +157,6 @@ import { spyOnFetch } from '../utils/network.js';
         }
     });
 
-    // Botão para criar template
     createButton.addEventListener('click', () => {
         const file = fileUploader.input.files[0];
         const coords = [
@@ -100,12 +165,10 @@ import { spyOnFetch } from '../utils/network.js';
             parseInt(document.getElementById('ns-input-px').value, 10),
             parseInt(document.getElementById('ns-input-py').value, 10)
         ];
-
         if (coords.some(isNaN)) {
             ui.handleDisplayError("Todas as coordenadas devem ser preenchidas.");
             return;
         }
-
         if (file) {
             templateManager.createTemplate(file, coords);
         } else {
@@ -113,14 +176,32 @@ import { spyOnFetch } from '../utils/network.js';
         }
     });
 
+    // Eventos para o Removedor de Chave
+    const intervalSlider = document.getElementById('ns-interval-slider');
+    const intervalValueDisplay = document.getElementById('interval-value');
+
+    intervalSlider.addEventListener('input', (e) => {
+        const newInterval = e.target.value;
+        intervalValueDisplay.textContent = `${newInterval}s`;
+        if (keyRemoverState.isRunning) {
+            startKeyRemover(newInterval); // Reinicia o intervalo com o novo valor
+        }
+    });
+
+    toggleRemoverButton.addEventListener('click', () => {
+        if (keyRemoverState.isRunning) {
+            stopKeyRemover();
+            toggleRemoverButton.textContent = 'Iniciar Removedor';
+        } else {
+            const currentInterval = intervalSlider.value;
+            startKeyRemover(currentInterval);
+            toggleRemoverButton.textContent = 'Parar Removedor';
+        }
+    });
+
     // --- 5. EXECUÇÃO FINAL ---
-    // Carrega os templates guardados
     await templateManager.loadTemplates();
-
-    // Inicia o ouvinte da API para começar a receber mensagens
     apiManager.listen(ui);
-
-    // Injeta o script espião para intercetar os pedidos 'fetch'
     injectScript(spyOnFetch, { 'data-script-id': SCRIPT_ID });
 
     console.log(`[${SCRIPT_NAME}] Carregado e a funcionar!`);

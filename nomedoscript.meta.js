@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projecto Aurora (Nome Provisório)
 // @namespace    https://github.com/seu-usuario
-// @version      0.1.0
+// @version      0.2.0
 // @description  Melhora a experiência no wplace.live com um overlay de templates e um novo design.
 // @author       O Seu Nome
 // @match        *://*.wplace.live/*

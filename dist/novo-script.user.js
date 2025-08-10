@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Projecto Aurora (Nome Provisório)
 // @namespace    https://github.com/rm0ntoya/Wplace
-// @version      0.1.2-debug
+// @version      0.2.2-debug
 // @description  Melhora a experiência no wplace.live com um overlay de templates e um novo design.
 // @author       Ruan Pablo
 // @match        *://*.wplace.live/*
