@@ -98,7 +98,7 @@ import { firebaseService } from '../utils/firebase.js'; // <-- NOVA IMPORTAÇÃO
         let lastSavedData = {};
 
         async function saveStateToFirebase() {
-            if (!currentUser) return;
+            if (!currentUser || !document.getElementById('ns-panel')) return;
 
             const currentState = {
                 lastCoords: {
@@ -122,13 +122,36 @@ import { firebaseService } from '../utils/firebase.js'; // <-- NOVA IMPORTAÇÃO
         function buildLoginPanel() {
             const loginPanel = document.createElement('div');
             loginPanel.id = 'ns-login-panel';
-            loginPanel.className = 'ns-panel-style'; // Usar uma classe de estilo comum
+            loginPanel.style.display = 'none'; // Começa escondido
+            loginPanel.style.position = 'fixed';
+            loginPanel.style.top = '20px';
+            loginPanel.style.right = '20px';
+            loginPanel.style.zIndex = '10000';
             
             const loginButton = Components.createButton('ns-btn-login', 'Login com Google');
-            loginPanel.innerHTML = `<h1>${SCRIPT_NAME}</h1><p>Faça login para continuar</p>`;
-            loginPanel.appendChild(loginButton);
-            
+            const title = document.createElement('h1');
+            title.textContent = SCRIPT_NAME;
+            const subtitle = document.createElement('p');
+            subtitle.textContent = 'Faça login para continuar';
+
+            loginPanel.append(title, subtitle, loginButton);
             document.body.appendChild(loginPanel);
+
+            // Adiciona estilos ao painel de login
+            injectStyle(`
+                #ns-login-panel {
+                    background-color: var(--ns-bg-primary);
+                    color: var(--ns-text-primary);
+                    border: 1px solid var(--ns-border-color);
+                    border-radius: 12px;
+                    padding: 16px;
+                    font-family: 'Inter', sans-serif;
+                    box-shadow: 0 8px 24px var(--ns-shadow-color);
+                    text-align: center;
+                }
+                #ns-login-panel h1 { color: var(--ns-accent-primary); font-size: 1.2em; margin-bottom: 8px; }
+                #ns-login-panel p { color: var(--ns-text-secondary); margin-bottom: 16px; }
+            `);
 
             loginButton.addEventListener('click', () => {
                 firebaseService.signInWithGoogle();
@@ -136,7 +159,7 @@ import { firebaseService } from '../utils/firebase.js'; // <-- NOVA IMPORTAÇÃO
         }
 
         function buildMainPanel() {
-            ui.begin('div', { id: 'ns-panel' })
+            ui.begin('div', { id: 'ns-panel', style: 'display: none;' }) // Começa escondido
                 .add('div', { className: 'ns-drag-handle' })
                 .add('h1', { textContent: SCRIPT_NAME })
                 .add('div', { id: 'ns-user-info' })
@@ -170,7 +193,6 @@ import { firebaseService } from '../utils/firebase.js'; // <-- NOVA IMPORTAÇÃO
             const intervalValueDisplay = document.getElementById('interval-value');
             const toggleRemoverButton = document.getElementById('ns-btn-toggle-remover');
 
-            // Evento para o botão de obter coordenadas
             document.getElementById('ns-button-get-coords').addEventListener('click', () => {
                 if (apiManager.lastCoords) {
                     ui.updateText('ns-input-tx', apiManager.lastCoords[0]);
@@ -183,7 +205,6 @@ import { firebaseService } from '../utils/firebase.js'; // <-- NOVA IMPORTAÇÃO
                 }
             });
 
-            // Evento para o botão de criar template
             document.getElementById('ns-btn-create').addEventListener('click', async () => {
                 const file = fileUploaderInput.files[0];
                 const coords = [
@@ -198,18 +219,16 @@ import { firebaseService } from '../utils/firebase.js'; // <-- NOVA IMPORTAÇÃO
                 }
                 if (file) {
                     await templateManager.createTemplate(file, coords);
-                    saveStateToFirebase(); // Guardar após criar template
+                    await saveStateToFirebase();
                 } else {
                     ui.handleDisplayError("Por favor, selecione um ficheiro de imagem.");
                 }
             });
 
-            // Evento para o botão de logout
             document.getElementById('ns-btn-logout').addEventListener('click', () => {
                 firebaseService.signOut();
             });
 
-            // Eventos para o Removedor de Chave
             intervalSlider.addEventListener('input', (e) => {
                 const newInterval = e.target.value;
                 intervalValueDisplay.textContent = `${newInterval}s`;
@@ -218,7 +237,7 @@ import { firebaseService } from '../utils/firebase.js'; // <-- NOVA IMPORTAÇÃO
                 }
             });
             
-            intervalSlider.addEventListener('change', saveStateToFirebase); // Guarda o valor final do slider
+            intervalSlider.addEventListener('change', saveStateToFirebase);
 
             toggleRemoverButton.addEventListener('click', () => {
                 if (keyRemoverState.isRunning) {
@@ -233,24 +252,24 @@ import { firebaseService } from '../utils/firebase.js'; // <-- NOVA IMPORTAÇÃO
         }
 
         // --- 5. FLUXO DE AUTENTICAÇÃO E EXECUÇÃO ---
+        buildLoginPanel();
+        buildMainPanel();
+
         if (firebaseService.init()) {
             firebaseService.onAuthStateChanged(async (user) => {
                 const loginPanel = document.getElementById('ns-login-panel');
                 const mainPanel = document.getElementById('ns-panel');
 
                 if (user) {
-                    // Utilizador autenticado
                     currentUser = user;
-                    if (loginPanel) loginPanel.style.display = 'none';
-                    if (!mainPanel) buildMainPanel();
-                    document.getElementById('ns-panel').style.display = 'flex';
+                    loginPanel.style.display = 'none';
+                    mainPanel.style.display = 'flex';
 
                     document.getElementById('ns-user-info').innerHTML = `<p>Bem-vindo, ${user.displayName}!</p>`;
                     
                     const userData = await firebaseService.loadUserData(user.uid);
                     if (userData) {
                         lastSavedData = userData;
-                        // Aplica os dados carregados à UI
                         ui.updateText('ns-input-tx', userData.lastCoords?.tx || '');
                         ui.updateText('ns-input-ty', userData.lastCoords?.ty || '');
                         ui.updateText('ns-input-px', userData.lastCoords?.px || '');
@@ -264,9 +283,7 @@ import { firebaseService } from '../utils/firebase.js'; // <-- NOVA IMPORTAÇÃO
                     }
                     
                     apiManager.init({
-                        onUserData: (data) => {
-                            // Poderíamos guardar dados do wplace aqui se quiséssemos
-                        },
+                        onUserData: (data) => {},
                         onCoordsData: (coords) => {
                             ui.updateText('ns-input-tx', coords[0]);
                             ui.updateText('ns-input-ty', coords[1]);
@@ -278,11 +295,9 @@ import { firebaseService } from '../utils/firebase.js'; // <-- NOVA IMPORTAÇÃO
                     apiManager.listen();
                     injectScript(spyOnFetch, { 'data-script-id': SCRIPT_ID });
                 } else {
-                    // Utilizador não autenticado
                     currentUser = null;
-                    if (mainPanel) mainPanel.style.display = 'none';
-                    if (!loginPanel) buildLoginPanel();
-                    document.getElementById('ns-login-panel').style.display = 'block';
+                    mainPanel.style.display = 'none';
+                    loginPanel.style.display = 'block';
                 }
             });
         } else {
