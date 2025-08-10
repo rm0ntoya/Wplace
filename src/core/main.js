@@ -58,7 +58,6 @@ import { spyOnFetch } from '../utils/network.js';
     const coordInputs = Components.createCoordinateInputs();
     const fileUploader = Components.createFileInput('ns-template-file', 'Carregar Template');
     const createButton = Components.createButton('ns-btn-create', 'Criar Template');
-    const toggleButton = Components.createButton('ns-btn-toggle', 'Desativar Templates', ['ns-button-secondary']);
     
     const statusArea = document.createElement('div');
     statusArea.id = ui.outputStatusId;
@@ -72,7 +71,6 @@ import { spyOnFetch } from '../utils/network.js';
         .add(null, {}, (el) => el.append(coordInputs))
         .add(null, {}, (el) => el.append(fileUploader.container))
         .add(null, {}, (el) => el.append(createButton))
-        .add(null, {}, (el) => el.append(toggleButton))
         .add(null, {}, (el) => el.append(statusArea))
     .end();
     
@@ -115,12 +113,6 @@ import { spyOnFetch } from '../utils/network.js';
         }
     });
 
-    // Botão para ativar/desativar templates
-    toggleButton.addEventListener('click', () => {
-        templateManager.toggleTemplates(!templateManager.areTemplatesEnabled);
-        toggleButton.textContent = templateManager.areTemplatesEnabled ? 'Desativar Templates' : 'Ativar Templates';
-    });
-
     // --- 5. EXECUÇÃO FINAL ---
     // Carrega os templates guardados
     await templateManager.loadTemplates();
@@ -134,4 +126,3 @@ import { spyOnFetch } from '../utils/network.js';
     console.log(`[${SCRIPT_NAME}] Carregado e a funcionar!`);
 
 })();
-
